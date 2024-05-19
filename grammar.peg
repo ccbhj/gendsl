@@ -1,0 +1,98 @@
+package gendsl
+
+type Parser Peg {
+}
+
+Script             <-         Expression EOT
+
+# Definition       <-         LPAR DefType OptionList? DefinitionBody RPAR
+# 
+# DefinitionBody   <-         Definition 
+#                              / Definition+
+#                              / Expression+
+#                              / Literal
+#                              / Identifier
+# 
+# Option           <-         ':' Identifier (Literal/Identifier) Spacing
+# 
+# OptionList       <-         Option+
+
+Expression       <-         LPAR Operator Operand*  RPAR
+
+Operator         <-         Identifier Spacing
+
+Operand          <-         (Expression
+                             / Literal
+                             / Identifier
+                            ) Spacing
+
+#-------------------------------------------------------------------------
+# Lexical elements
+#-------------------------------------------------------------------------
+Spacing          <-        ( [ \t\r\n]+
+                             / ';' (![\r\n] .)* [\r\n]
+                           )*
+
+Identifier       <-        (Letter / '$') ( LetterOrDigit / '-')* Spacing? #{}
+
+#-------------------------------------------------------------------------
+# Literals
+#-------------------------------------------------------------------------
+
+Literal                <-               ( FloatLiteral
+                                          / IntegerLiteral          # May be a prefix of FloatLiteral
+                                          / StringLiteral
+                                          / BoolLiteral
+                                        ) 
+
+BoolLiteral            <-               ('#f' / '#t') !LetterOrDigit 
+
+FloatLiteral           <-               [+\-]? (Digits '.' Digits?  Exponent?
+                                                /  Digits Exponent
+                                                / '.' Digits Exponent?)
+
+Exponent               <-               [eE] [+\-]? Digits
+
+IntegerLiteral         <-               [-]? DecimalNumeral [uUfF]?
+
+DecimalNumeral         <-               '0' / [1-9] ([_]* [0-9])*
+
+StringLiteral          <-               ["] StringChar* ["]
+
+StringChar             <-               Escape / ![\"\n\\] .
+
+LetterOrDigit          <-               [a-z] / [A-Z] / [0-9] / [_]
+
+Letter                 <-               [a-z] / [A-Z] / [_]
+
+Digits                 <-               [0-9]([_]*[0-9])*
+
+Escape                 <-               '\\' [btnfr"'\\] 
+
+#-------------------------------------------------------------------------
+# Keywords
+#-------------------------------------------------------------------------
+# Keyword                <-            ('define-prdt'
+#                                       / 'define-lhs'
+#                                       / 'define-rhs'
+#                                       / 'rule'
+#                                       / 'define'        # must be the last one to match
+#                                       ) !LetterOrDigit
+# 
+# DefType                <-               '#' Identifier
+
+
+#-------------------------------------------------------------------------
+# Punctuators
+#-------------------------------------------------------------------------
+
+LPAR      <-  Spacing        '('         Spacing
+
+RPAR      <-  Spacing        ')'         Spacing
+
+# LBRK      <-  Spacing        '['         Spacing
+# 
+# RBRK      <-  Spacing        ']'         Spacing
+
+EOT       <-  !.
+
