@@ -1,35 +1,30 @@
+// Package gendsl provides a framework to evaluate an expression in lisp-like sytanx(S-Expression) in any way you want without
+// involving any lexer, parser.
 package gendsl
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
 )
 
-var ErrUnboundedIdentifier = errors.New("unbounded identifier")
-
 type (
+	// ParseContext holds the stateless parser context for a compiled script.
+	// It can be reused and re-evaluated with different [gendsl.EvalCtx].
 	ParseContext struct {
-		p   *Parser
-		env map[string]any // global env, will never modified
+		p *parser
 	}
 
-	EvalCtx struct {
-		parent   *EvalCtx
-		env      Env // env for evaluation
-		UserData interface{}
-	}
-
-	OptionList map[string]any
+	// 	OptionList map[string]any
 )
 
 var parserTab map[pegRule]func(*ParseContext, *EvalCtx, *node32) (any, error)
 
 func init() {
 	parserTab = map[pegRule]func(*ParseContext, *EvalCtx, *node32) (any, error){
-		ruleScript:         parseChild,
+		ruleScript:         parseFirstNonSpaceChild,
+		ruleValue:          parseFirstNonSpaceChild,
 		ruleExpression:     parseExpression,
 		ruleIdentifier:     parseIdentifier,
 		ruleOperator:       parseOperator,
@@ -38,32 +33,38 @@ func init() {
 		ruleFloatLiteral:   parseFloatLiteral,
 		ruleIntegerLiteral: parseIntegerLiteral,
 		ruleStringLiteral:  parseStringLiteral,
+		ruleNilLiteral:     parseNilLiteral,
 	}
 }
 
-func EvalExpr(expr string, env Env) (any, error) {
-	p, err := MakeParseContext(expr, env)
+// EvalExpr evaluates an `expr` with `env` and return a Value result which could be nil as the result.
+func EvalExpr(expr string, env *Env) (Value, error) {
+	p, err := MakeParseContext(expr)
 	if err != nil {
 		return nil, err
 	}
-	return p.Run(NewEvalCtx(nil, nil, p.env))
+	return p.Eval(NewEvalCtx(nil, nil, env))
 }
 
-func EvalExprWithInput(expr string, env Env, data any) (any, error) {
-	p, err := MakeParseContext(expr, env)
+// EvalExprWithData evaluates an `expr` with `env`,
+// and allow you to pass a data to use across the entrie evaluation.
+func EvalExprWithData(expr string, env *Env, data any) (Value, error) {
+	p, err := MakeParseContext(expr)
 	if err != nil {
 		return nil, err
 	}
-	c := NewEvalCtx(nil, data, p.env)
-	ret, err := p.Run(c)
+	c := NewEvalCtx(nil, data, env)
+	ret, err := p.Eval(c)
 	if err != nil {
 		return nil, err
 	}
 	return ret, nil
 }
 
-func MakeParseContext(expr string, globalEnv Env) (*ParseContext, error) {
-	parser := &Parser{
+// MakeParseContext parses the expr and compiles it into an ast.
+// You can save the *ParseContext for later usage, since there is no side-affect during evaluation.
+func MakeParseContext(expr string) (*ParseContext, error) {
+	parser := &parser{
 		Buffer: expr,
 		Pretty: true,
 	}
@@ -71,104 +72,50 @@ func MakeParseContext(expr string, globalEnv Env) (*ParseContext, error) {
 		return nil, err
 	}
 	if err := parser.Parse(); err != nil {
+		pe := new(parseError)
+		if errors.Is(err, pe) {
+			return nil, &SyntaxError{pe: pe}
+		}
 		return nil, err
 	}
 	return &ParseContext{
-		p:   parser,
-		env: globalEnv,
+		p: parser,
 	}, nil
 }
 
-func NewEvalCtx(p *EvalCtx, userData any, env map[string]any) *EvalCtx {
-	return &EvalCtx{
-		parent:   p,
-		env:      env,
-		UserData: userData,
+// Eval evaluates the compiled script with an evalCtx.
+// It will panic if evalCtx is nil.
+func (c *ParseContext) Eval(evalCtx *EvalCtx) (Value, error) {
+	if evalCtx == nil {
+		panic("evalCtx cannot be nil")
 	}
-}
-
-func (e *EvalCtx) lookup(id string) (any, bool) {
-	v, ok := e.env[id]
-	if ok {
-		return v, ok
-	}
-
-	if e.parent == nil {
-		return nil, false
-	}
-
-	return e.parent.lookup(id)
-}
-
-func (c *ParseContext) Run(evalCtx *EvalCtx) (any, error) {
 	ast := c.p.AST()
 	v, err := c.parseNode(ast, evalCtx)
 	if err != nil {
 		return nil, err
 	}
-	return v, nil
-}
-
-func (c *ParseContext) PrintAst() {
-	c.p.PrintSyntaxTree()
+	if v == nil {
+		return nil, nil
+	}
+	ret, ok := v.(Value)
+	if !ok {
+		return nil, errors.Errorf("invalid Value got returned, expecting Value but got %v", v)
+	}
+	return ret, nil
 }
 
 func (c *ParseContext) nodeText(n *node32) string {
 	return strings.TrimSpace(string(c.p.buffer[n.begin:n.end]))
 }
 
-func (c *ParseContext) readChars(node *node32) (string, error) {
-	buf := &strings.Builder{}
-	for node.next != nil {
-		switch node.pegRule {
-		case ruleLetterOrDigit, ruleLetter:
-			buf.WriteString(c.nodeText(node))
-		default:
-			return "", SyntaxErrorf(c, node, "expecting a digit or char")
-		}
-		node = node.next
-	}
-
-	return buf.String(), nil
-}
-
+// PrintTree output the syntax tree to the stdio
 func (c *ParseContext) PrintTree() {
 	c.p.PrintSyntaxTree()
 }
 
-type SyntaxError struct {
-	beginLine, endLine int
-	beginSym, endSym   int
-	cause              error
-}
-
-func (s *SyntaxError) Error() string {
-	return fmt.Sprintf("invalid syntax from line %d, symbol %d to line %d, symbol %d: %s",
-		s.beginLine, s.beginSym, s.endLine, s.endSym, s.cause)
-}
-
-func (s *SyntaxError) Unwrap() error {
-	return s.cause
-}
-
-func (s *SyntaxError) Cause() error {
-	return s.cause
-}
-
-func SyntaxErrorf(c *ParseContext, node *node32, f string, args ...any) error {
-	pos := translatePositions(c.p.buffer, []int{int(node.begin), int(node.end)})
-	beg, end := pos[int(node.begin)], pos[int(node.end)]
-
-	return &SyntaxError{
-		beginLine: beg.line,
-		endLine:   end.line,
-		beginSym:  beg.symbol,
-		endSym:    end.symbol,
-		cause:     errors.Errorf(f, args...),
-	}
-}
-
-// parsers
+// parseNode parses an ast node.
+// make sure that you have registered a parser func in parserTab for the node's rule.
+// NOTE that you should use it whenevr you are not sure of the node's type or how to parse it.
 func (c *ParseContext) parseNode(node *node32, evalCtx *EvalCtx) (any, error) {
 	parser := parserTab[node.pegRule]
 	if parser == nil {
@@ -181,101 +128,110 @@ func (r pegRule) String() string {
 	return rul3s[r]
 }
 
-// parse whatever its child is
+func parseFirstNonSpaceChild(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
+	cur := node.up
+	// skip the space
+	for ; cur != nil && cur.pegRule == ruleSpacing; cur = cur.next {
+	}
+	return c.parseNode(cur, evalCtx)
+}
+
+// parse whatever its child is.
 func parseChild(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
 	return c.parseNode(node.up, evalCtx)
 }
 
-// parseNodeText return the text of the token node
+// parseNodeText return the text of the token node.
 func parseNodeText(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
 	return c.nodeText(node), nil
 }
 
-func parseOptionList(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
-	opts := make(OptionList, 2)
-	for node = node.up; node != nil; node = node.next {
-		optID, optVal, err := parseOption(c, evalCtx, node)
-		if err != nil {
-			return nil, err
-		}
-		opts[optID] = optVal
-	}
-	return opts, nil
-}
+// func parseOptionList(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
+// 	opts := make(OptionList, 2)
+// 	for node = node.up; node != nil; node = node.next {
+// 		optID, optVal, err := parseOption(c, evalCtx, node)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		opts[optID] = optVal
+// 	}
+// 	return opts, nil
+// }
 
-func parseOption(c *ParseContext, evalCtx *EvalCtx, node *node32) (string, any, error) {
-	var (
-		id    string
-		idVal any
-		val   any
-		err   error
-	)
-
-	node = node.up
-	idVal, err = c.parseNode(node, evalCtx)
-	if err != nil {
-		return "", nil, errors.Errorf("fail to parse option id(%q)", c.nodeText(node))
-	}
-	id = idVal.(string)
-
-	val, err = c.parseNode(node.next, evalCtx)
-	if err != nil {
-		return "", nil, errors.Errorf("fail to parse option val(%q) for option #:%s",
-			c.nodeText(node.next), idVal)
-	}
-	return id, val, nil
-}
+// func parseOption(c *ParseContext, evalCtx *EvalCtx, node *node32) (string, any, error) {
+// 	var (
+// 		id    string
+// 		idVal any
+// 		val   any
+// 		err   error
+// 	)
+//
+// 	node = node.up
+// 	idVal, err = c.parseNode(node, evalCtx)
+// 	if err != nil {
+// 		return "", nil, errors.Errorf("fail to parse option id(%q)", c.nodeText(node))
+// 	}
+// 	id = idVal.(string)
+//
+// 	val, err = c.parseNode(node.next, evalCtx)
+// 	if err != nil {
+// 		return "", nil, errors.Errorf("fail to parse option val(%q) for option #:%s",
+// 			c.nodeText(node.next), idVal)
+// 	}
+// 	return id, val, nil
+// }
 
 func parseIdentifier(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
 	id := strings.TrimSpace(c.nodeText(node))
-	v, ok := evalCtx.lookup(id)
+	v, ok := evalCtx.Lookup(id)
 	if !ok {
-		return nil, errors.WithMessagef(ErrUnboundedIdentifier, "%s", id)
+		return nil, newUnboundedIdentifierError(c, node, id)
 	}
 	return v, nil
 }
 
 func parseOperator(c *ParseContext, e *EvalCtx, node *node32) (any, error) {
-	id, err := c.readChars(node.up.up)
-	if err != nil {
-		return nil, err
-	}
-	id = strings.TrimSpace(id)
-	v, ok := e.lookup(id)
+	id := strings.TrimSpace(c.nodeText(node.up))
+	v, ok := e.Lookup(id)
 	if !ok {
-		return nil, SyntaxErrorf(c, node, "unsupported operator <%s>", id)
+		return nil, evalErrorf(c, node, "unsupported operator %s", id)
 	}
-	op, ok := v.(Operator)
+	op, ok := v.(Procedure)
 	if !ok {
-		return nil, SyntaxErrorf(c, node, "<%s> not operator", id)
+		return nil, evalErrorf(c, node, "<%s> not operator", id)
 	}
 
 	return op, nil
 }
 
 func parseStringLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
-	unquoted, err := strconv.Unquote(c.nodeText(node))
+	text := c.nodeText(node)
+	unquoted, err := strconv.Unquote(text)
 	if err != nil {
 		return nil, err
 	}
-	return unquoted, nil
+	return String(unquoted), nil
 }
 
 func parseFloatLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
 	text := c.nodeText(node)
 	v, err := strconv.ParseFloat(text, 64)
 	if err != nil {
-		return nil, SyntaxErrorf(c, node, "invalid float literal %q: %s", text, err)
+		return nil, evalErrorf(c, node, "invalid float literal %q: %s", text, err)
 	}
-	return v, nil
+	return Float(v), nil
 }
 
 func parseBoolLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
 	s := c.nodeText(node)
 	if s == "#t" {
-		return true, nil
+		return Bool(true), nil
 	}
-	return false, nil
+	return Bool(false), nil
+}
+
+func parseNilLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
+	return Nil{}, nil
 }
 
 func parseIntegerLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
@@ -286,16 +242,20 @@ func parseIntegerLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error)
 	text := c.nodeText(node)
 	suffix := text[len(text)-1]
 	switch suffix {
-	case 'f', 'F':
-		v, err = strconv.ParseFloat(text[:len(text)-1], 64)
 	case 'u', 'U':
-		v, err = strconv.ParseUint(text[:len(text)-1], 10, 64)
+		v, err = strconv.ParseUint(text[:len(text)-1], 0, 64)
+		if err == nil {
+			v = Uint(v.(uint64))
+		}
 	default:
-		v, err = strconv.ParseInt(text, 10, 64)
+		v, err = strconv.ParseInt(text, 0, 64)
+		if err == nil {
+			v = Int(v.(int64))
+		}
 	}
 
 	if err != nil {
-		return nil, SyntaxErrorf(c, node, "invalid literal %q: %s", text, err)
+		return nil, evalErrorf(c, node, "invalid literal %q: %s", text, err)
 	}
 	return v, nil
 }

@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestGrammar(t *testing.T) {
+func TestGenDsl(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Grammar Suite")
+	RunSpecs(t, "GenDsl Suite")
 }
