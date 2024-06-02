@@ -11,11 +11,25 @@ import (
 	"github.com/pkg/errors"
 )
 
-func _return(evalCtx *EvalCtx, args []Expr) (Value, error) {
+func _array(_ *EvalCtx, args []Expr, _ map[string]Value) (Value, error) {
+	ret := make([]Value, 0, len(args))
+	for _, arg := range args {
+		v, err := arg.Eval()
+		if err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, v)
+	}
+
+	return &UserData{V: ret}, nil
+}
+
+func _return(evalCtx *EvalCtx, args []Expr, _ map[string]Value) (Value, error) {
 	return args[0].Eval()
 }
 
-func _plus(evalCtx *EvalCtx, args []Expr) (Value, error) {
+func _plus(evalCtx *EvalCtx, args []Expr, _ map[string]Value) (Value, error) {
 	var ret Int
 	for i, v := range args {
 		x, err := v.Eval()
@@ -32,7 +46,7 @@ func _plus(evalCtx *EvalCtx, args []Expr) (Value, error) {
 	return ret, nil
 }
 
-func _define(evalCtx *EvalCtx, args []Expr) (Value, error) {
+func _define(evalCtx *EvalCtx, args []Expr, _ map[string]Value) (Value, error) {
 	id, err := args[0].Eval()
 	if err != nil {
 		return nil, err
@@ -47,7 +61,7 @@ func _define(evalCtx *EvalCtx, args []Expr) (Value, error) {
 	return args[2].EvalWithEnv(NewEnv().WithValue(string(id.(String)), val))
 }
 
-func _block(evalCtx *EvalCtx, args []Expr) (Value, error) {
+func _block(evalCtx *EvalCtx, args []Expr, _ map[string]Value) (Value, error) {
 	var ret Value
 	for _, arg := range args {
 		v, err := arg.Eval()
@@ -70,7 +84,8 @@ var _ = Describe("Expr", func() {
 			WithProcedure("RETURN", Procedure{Eval: CheckNArgs("1", _return)}).
 			WithProcedure("DEFINE", Procedure{Eval: CheckNArgs("3", _define)}).
 			WithProcedure("BLOCK", Procedure{Eval: CheckNArgs("*", _block)}).
-			WithProcedure("PLUS", Procedure{Eval: CheckNArgs("*", _plus)})
+			WithProcedure("PLUS", Procedure{Eval: CheckNArgs("*", _plus)}).
+			WithProcedure("ARRAY", Procedure{Eval: CheckNArgs("*", _array)})
 	})
 	Describe("Literal", func() {
 		var (
@@ -134,6 +149,21 @@ var _ = Describe("Expr", func() {
 			Expect(evalFn(`"\\\\\n"`)).Should(BeIdenticalTo(String(`\\` + "\n")))
 			Expect(evalFn(`"\\\n\\\n"`)).Should(BeIdenticalTo(String(`\` + "\n" + `\` + "\n")))
 		})
+
+		It("can eval a long string", func() {
+			Expect(evalFn(`"""hello"""`)).Should(BeIdenticalTo(String("hello")))
+			Expect(evalFn(`"""你好"""`)).Should(BeIdenticalTo(String("你好")))
+			Expect(evalFn(`"""line
+ break"""`)).Should(BeIdenticalTo(String("line\n break")))
+			Expect(evalFn(`"""\n"""`)).Should(BeIdenticalTo(String(`\n`)))
+			Expect(evalFn(`"""\xc3"""`)).Should(BeIdenticalTo(String(`\xc3`)))
+			Expect(evalFn(`"""\\\"""`)).Should(BeIdenticalTo(String(`\\\`)))
+			Expect(evalFn(`"""''"""`)).Should(BeIdenticalTo(String(`''`)))
+			Expect(evalFn(`(ARRAY """""" "")`)).
+				Should(BeEquivalentTo(&UserData{[]Value{String(""), String("")}}))
+			Expect(evalFn(`(ARRAY "" """""" "")`)).
+				Should(BeEquivalentTo(&UserData{[]Value{String(""), String(""), String("")}}))
+		})
 	})
 
 	Describe("Expr", func() {
@@ -185,6 +215,65 @@ var _ = Describe("Expr", func() {
 			})
 
 		})
+	})
+
+	Describe("option value", func() {
+		var env *Env
+		BeforeEach(func() {
+			p := Procedure{
+				Eval: func(evalCtx *EvalCtx, args []Expr, opts map[string]Value) (Value, error) {
+					return &UserData{V: opts}, nil
+				},
+			}
+			env = testEnv.Clone().WithProcedure("OPTIONS", p)
+		})
+
+		It("can declare literal option in a procedure", func() {
+			Expect(EvalExpr(`(OPTIONS #:foo "bar" #:one 1)`, env)).Should(BeEquivalentTo(&UserData{
+				V: map[string]Value{
+					"foo": String("bar"),
+					"one": Int(1),
+				},
+			}))
+		})
+
+		It("can declare value env in the option in a procedure", func() {
+			e := env.Clone().WithInt("ONE", 1)
+			Expect(EvalExpr(`(OPTIONS #:foo "bar" #:one ONE)`, e)).Should(BeEquivalentTo(&UserData{
+				V: map[string]Value{
+					"foo": String("bar"),
+					"one": Int(1),
+				},
+			}))
+		})
+
+		It("can use option along with some value", func() {
+			p := Procedure{
+				Eval: func(evalCtx *EvalCtx, args []Expr, opts map[string]Value) (Value, error) {
+					var ret Int
+					limit := opts["N"].(Int)
+					for i := 0; i < int(limit) && i < len(args); i++ {
+						v, err := args[i].Eval()
+						if err != nil {
+							return nil, err
+						}
+						ret += v.(Int)
+					}
+					return ret, nil
+				},
+			}
+			// only allow two values
+			env = testEnv.Clone().WithProcedure("PLUS_N", p)
+			Expect(EvalExpr(`(PLUS_N #:N 2 10 20)`, env)).Should(BeIdenticalTo(Int(30)))
+			Expect(EvalExpr(`(PLUS_N #:N 2 (RETURN 10) 20)`, env)).Should(BeIdenticalTo(Int(30)))
+			Expect(EvalExpr(`(PLUS_N #:N 2 10 20 30 40 50)`, env)).Should(BeIdenticalTo(Int(30)))
+		})
+
+		It("cannot use an procedure expression in option", func() {
+			Expect(extractErr2(EvalExpr, `(OPTIONS #:foo "bar" #:one (RETURN 1))`, env)).
+				Should(MatchError(ContainSubstring("parse error")))
+		})
+
 	})
 
 	Describe("env", func() {
@@ -275,7 +364,7 @@ func extractErr2[X, Y, T any](fn func(X, Y) (T, error), x X, y Y) error {
 }
 
 var testEnv = NewEnv().WithProcedure("RETURN", Procedure{
-	Eval: CheckNArgs("1", func(_ *EvalCtx, args []Expr) (Value, error) {
+	Eval: CheckNArgs("1", func(_ *EvalCtx, args []Expr, _ map[string]Value) (Value, error) {
 		return args[0].Eval()
 	}),
 },
@@ -381,11 +470,11 @@ func FuzzExprLiteralFloat(f *testing.F) {
 			}
 		case 3:
 			fn = func(f float64) string {
-				return fmt.Sprintf("%g", s)
+				return fmt.Sprintf("%g", f)
 			}
 		case 4:
 			fn = func(f float64) string {
-				return fmt.Sprintf("%G", s)
+				return fmt.Sprintf("%G", f)
 			}
 		}
 		script := fmt.Sprintf(`(RETURN %s)`, fn(s))

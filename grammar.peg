@@ -13,11 +13,8 @@ Script             <-         Value EOT
 #                              / Literal
 #                              / Identifier
 # 
-# Option           <-         ':' Identifier (Literal/Identifier) Spacing
-# 
-# OptionList       <-         Option+
 
-Expression       <-         LPAR Operator Value* RPAR 
+Expression       <-         LPAR Operator OptionList? Value* RPAR 
 
 Operator         <-         Identifier
 
@@ -25,6 +22,11 @@ Value            <-         (Expression
                              / Literal
                              / Identifier
                             ) Spacing
+
+OptionList       <-         Option+
+
+Option           <-         '#:' Identifier (Literal/Identifier) Spacing
+
 
 #-------------------------------------------------------------------------
 # Lexical elements
@@ -42,6 +44,7 @@ Identifier       <-       (Letter / '$' / '@') (LetterOrDigit / '-')* Spacing #{
 Literal                <-               ( NilLiteral
                                           / FloatLiteral
                                           / IntegerLiteral          # May be a prefix of FloatLiteral
+                                          / LongStringLiteral
                                           / StringLiteral
                                           / BoolLiteral
                                         )  Spacing
@@ -63,6 +66,10 @@ HexNumeral             <-               HexDigit ([_]* HexDigit)* / '0'
 
 DecimalNumeral         <-               [1-9] ([_]* [0-9])* / '0'
 
+LongStringLiteral      <-               '"""' LongStringChar* '"""'
+
+LongStringChar         <-               ![\"].
+
 StringLiteral          <-               ["] StringChar* ["]
 
 StringChar             <-               UChar / Escape / HexByte / ![\"\n\\] . 
@@ -71,6 +78,7 @@ HexByte                <-               '\\' 'x' HexDigit HexDigit
 
 UChar                  <-               '\\' 'u' HexDigit HexDigit HexDigit HexDigit
                                         /  '\\' 'U' HexDigit HexDigit HexDigit HexDigit HexDigit HexDigit HexDigit HexDigit
+
 
 LetterOrDigit          <-               [a-z] / [A-Z] / [0-9] / [_]
 

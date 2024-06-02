@@ -34,7 +34,7 @@ func main() {
 	}
 
 	env := gendsl.NewEnv().WithProcedure("ECHO", gendsl.Procedure{
-		Eval: func(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+		Eval: func(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 			for _, arg := range args {
 				v, err := arg.Eval()
 				if err != nil {

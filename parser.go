@@ -1,5 +1,4 @@
-// Package gendsl provides a framework to evaluate an expression in lisp-like sytanx(S-Expression) in any way you want without
-// involving any lexer, parser.
+// Package gendsl provides framework a DSL in [Lisp](https://en.wikipedia.org/wiki/Lisp_(programming_language)) style  and allows you to customize your own expressions so that you can integrate it into your own golang application without accessing any lexer or parser.
 package gendsl
 
 import (
@@ -23,17 +22,18 @@ var parserTab map[pegRule]func(*ParseContext, *EvalCtx, *node32) (any, error)
 
 func init() {
 	parserTab = map[pegRule]func(*ParseContext, *EvalCtx, *node32) (any, error){
-		ruleScript:         parseFirstNonSpaceChild,
-		ruleValue:          parseFirstNonSpaceChild,
-		ruleExpression:     parseExpression,
-		ruleIdentifier:     parseIdentifier,
-		ruleOperator:       parseOperator,
-		ruleLiteral:        parseChild,
-		ruleBoolLiteral:    parseBoolLiteral,
-		ruleFloatLiteral:   parseFloatLiteral,
-		ruleIntegerLiteral: parseIntegerLiteral,
-		ruleStringLiteral:  parseStringLiteral,
-		ruleNilLiteral:     parseNilLiteral,
+		ruleScript:            parseFirstNonSpaceChild,
+		ruleValue:             parseFirstNonSpaceChild,
+		ruleExpression:        parseExpression,
+		ruleIdentifier:        parseIdentifier,
+		ruleOperator:          parseOperator,
+		ruleLiteral:           parseChild,
+		ruleBoolLiteral:       parseBoolLiteral,
+		ruleFloatLiteral:      parseFloatLiteral,
+		ruleIntegerLiteral:    parseIntegerLiteral,
+		ruleStringLiteral:     parseStringLiteral,
+		ruleLongStringLiteral: parseLongStringLiteral,
+		ruleNilLiteral:        parseNilLiteral,
 	}
 }
 
@@ -142,7 +142,7 @@ func parseChild(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
 }
 
 // parseNodeText return the text of the token node.
-func parseNodeText(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
+func parseNodeText(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
 	return c.nodeText(node), nil
 }
 
@@ -181,8 +181,13 @@ func parseNodeText(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error)
 // 	return id, val, nil
 // }
 
-func parseIdentifier(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
+func readIdentifierText(c *ParseContext, node *node32) string {
 	id := strings.TrimSpace(c.nodeText(node))
+	return id
+}
+
+func parseIdentifier(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
+	id := readIdentifierText(c, node)
 	v, ok := evalCtx.Lookup(id)
 	if !ok {
 		return nil, newUnboundedIdentifierError(c, node, id)
@@ -204,11 +209,16 @@ func parseOperator(c *ParseContext, e *EvalCtx, node *node32) (any, error) {
 	return op, nil
 }
 
+func parseLongStringLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
+	text := c.nodeText(node)
+	return String(text[3 : len(text)-3]), nil
+}
+
 func parseStringLiteral(c *ParseContext, _ *EvalCtx, node *node32) (any, error) {
 	text := c.nodeText(node)
 	unquoted, err := strconv.Unquote(text)
 	if err != nil {
-		return nil, err
+		return nil, evalErrorf(c, node, "invalid string literal")
 	}
 	return String(unquoted), nil
 }

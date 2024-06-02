@@ -23,7 +23,7 @@ type MiniAWK struct {
 type MiniAWkOpt func(awk *MiniAWK)
 
 // _begin for (BEGIN {expr}) set the begin part of the MiniAWK.
-func _begin(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _begin(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	return &gendsl.UserData{
 		V: func(awk *MiniAWK) {
 			awk.Begin = args[0]
@@ -32,7 +32,7 @@ func _begin(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
 }
 
 // _end for (END {expr}) set the end part of the MiniAWK.
-func _end(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _end(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	return &gendsl.UserData{
 		V: func(awk *MiniAWK) {
 			awk.End = args[0]
@@ -41,7 +41,7 @@ func _end(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
 }
 
 // _pattern for (PATTERN {match_expr} {action_expr}) to register a matcher and it action.
-func _pattern(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _pattern(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	if len(args) < 2 {
 		panic("need two or more arguments")
 	}
@@ -59,7 +59,7 @@ func _pattern(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
 }
 
 // _match for (match {pattern} {text}) to report if `text` match the regex expr {pattern}.
-func _match(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _match(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	if len(args) < 1 {
 		panic("need one or more arguments")
 	}
@@ -80,7 +80,7 @@ func _match(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
 }
 
 // _printf for (print {fmt} {arg...}) to behave like the fmt.Printf(fmt, arg...).
-func _printf(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _printf(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	if len(args) < 1 {
 		panic("need one or more arguments")
 	}
@@ -111,7 +111,7 @@ var awkEnv = gendsl.NewEnv().
 	WithProcedure("match", gendsl.Procedure{Eval: _match})
 
 // _awk accept an io.Reader before execution and some option from DSL then run the text parsing.
-func _awk(evalCtx *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _awk(evalCtx *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	awk := &MiniAWK{}
 
 	// read options
@@ -195,12 +195,16 @@ func EvalAWK(script string, input io.Reader) error {
 // ExampleEvalExprWithData demonstrates a DSL that acts like the unix command 'awk'.
 // Inside the (awk ...) block, you can define three sections:
 //   - (BEGIN {action}) defines what to do before the text processing starts.
-//   - (END {action}) defines what to do after the text processing starts.
-//   - (PATTERN {pattern} {action}) is the match-then part tells the MiniAWK to execute {action} when a line in the text matches {pattern} (when {pattern} returns true). It can declare more than on (PATTERN ...) expression and they will be executed one by one. What's more, you can refer each column in a line by "$1" for first column, "$2" for second column, "$n" for n columns and $0 for the whole line. In addition, a (match {regex_pattern} {column}) expression is provided for {pattern}, and (printf {format} {arg}...) for {action}.
+//   - (END {action}) defines what to do after the text processing done.
+//   - (PATTERN {pattern} {action}) is the match-then part that tells the MiniAWK to execute {action} when a line of the input matches {pattern} (when {pattern} returns true).
+//     More than one (PATTERN ...) expression is allowed and they will be executed one by one.
+//     What's more, you can refer each column in a line by "$1" for first column, "$2" for second column, "$n" for n columns and $0 for the whole line.
+//     In additional, a (match {regex_pattern} {column}) expression is provided for {pattern}, and (printf {format} {arg}...) for {action}.
 func ExampleEvalExprWithData() {
 	scripts := `
 (awk 
 	(BEGIN (printf "Language    FirstAppearAt\n" )) 
+	; find out those language that matches ".*C.*", print their name the first appear time.
 	(PATTERN (match ".*C.*" $1) (printf "%-8s    %s\n" $1 $3))  
 )
 	`

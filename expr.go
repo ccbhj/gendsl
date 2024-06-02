@@ -19,15 +19,13 @@ type (
 
 	// ProcedureFn specify the behavior of an [gendsl.Procedure].
 	// `evalCtx` carry some information that might be used during the evaluation, see [gendsl.EvalCtx]
-	ProcedureFn func(evalCtx *EvalCtx, args []Expr) (Value, error)
+	ProcedureFn func(evalCtx *EvalCtx, args []Expr, options map[string]Value) (Value, error)
 )
 
 func parseExpression(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
 	cur := node.up
-	cur = cur.next                   // ignore the LPAR
-	if cur.pegRule != ruleOperator { // won't go into here, the parser will make sure of it
-		return nil, evalErrorf(c, cur, "expecting an operator in expression, but got %s", cur.pegRule)
-	}
+	cur = cur.next // ignore the LPAR
+	// assert(cur.pegRule != ruleOperator)
 	v, err := c.parseNode(cur, evalCtx)
 	if err != nil {
 		return nil, err
@@ -40,8 +38,18 @@ func parseExpression(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, erro
 		return nil, evalErrorf(c, node, "procedure <%s> not provide an evaluate function", v)
 	}
 
+	var options map[string]Value
+	cur = cur.next
+	if cur.pegRule == ruleOptionList {
+		options, err = parseOptionList(c, evalCtx, cur)
+		if err != nil {
+			return nil, err
+		}
+		cur = cur.next
+	}
+
 	operands := make([]Expr, 0)
-	for cur = cur.next; cur != nil; cur = cur.next {
+	for ; cur != nil; cur = cur.next {
 		switch cur.pegRule {
 		case ruleLPAR, ruleRPAR:
 			continue
@@ -53,8 +61,7 @@ func parseExpression(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, erro
 			panic("invalid node in an expression")
 		}
 	}
-
-	return op.Eval(evalCtx, operands)
+	return op.Eval(evalCtx, operands, options)
 }
 
 func newOperand(c *ParseContext, evalCtx *EvalCtx, node *node32) Expr {
@@ -73,6 +80,39 @@ func newOperand(c *ParseContext, evalCtx *EvalCtx, node *node32) Expr {
 		}
 		return tv, nil
 	}
+}
+
+func parseOptionList(c *ParseContext, evalCtx *EvalCtx, node *node32) (map[string]Value, error) {
+	var options map[string]Value
+	cur := node.up
+	for ; cur != nil && cur.pegRule == ruleOption; cur = cur.next {
+		id, val, err := parseOption(c, evalCtx, cur)
+		if err != nil {
+			return nil, err
+		}
+		if options == nil {
+			options = make(map[string]Value)
+		}
+		options[id] = val
+	}
+
+	return options, nil
+}
+
+func parseOption(c *ParseContext, evalCtx *EvalCtx, node *node32) (string, Value, error) {
+	cur := node.up
+	id := readIdentifierText(c, cur)
+
+	cur = cur.next
+	val, err := c.parseNode(cur, evalCtx)
+	if err != nil {
+		return "", nil, evalErrorf(c, node, "fail to parse value for option %q", id)
+	}
+	v, ok := val.(Value)
+	if !ok {
+		return "", nil, evalErrorf(c, node, id, "invalid value for option %q")
+	}
+	return id, v, nil
 }
 
 // Eval evaluate an [gendsl.Expr], return the result of this expression.
@@ -104,18 +144,18 @@ func (e Expr) EvalWithEnv(env *Env) (Value, error) {
 func CheckNArgs(nargs string, evalFn ProcedureFn) ProcedureFn {
 	switch strings.TrimSpace(nargs) {
 	case "+": // one or more args
-		return func(evalCtx *EvalCtx, args []Expr) (Value, error) {
+		return func(evalCtx *EvalCtx, args []Expr, options map[string]Value) (Value, error) {
 			if len(args) < 1 {
 				return nil, errors.Errorf("expecting one or more argument, but got %d", len(args))
 			}
-			return evalFn(evalCtx, args)
+			return evalFn(evalCtx, args, options)
 		}
 	case "?": // one or no arg
-		return func(evalCtx *EvalCtx, args []Expr) (Value, error) {
+		return func(evalCtx *EvalCtx, args []Expr, options map[string]Value) (Value, error) {
 			if len(args) > 1 {
 				return nil, errors.Errorf("expecting one or no argument, but got %d", len(args))
 			}
-			return evalFn(evalCtx, args)
+			return evalFn(evalCtx, args, options)
 		}
 	case "*", "": // one or no arg
 		return evalFn
@@ -125,11 +165,11 @@ func CheckNArgs(nargs string, evalFn ProcedureFn) ProcedureFn {
 	if err != nil {
 		panic(errors.Errorf("invalid nargs(%q) passed to CheckNArgs", nargs))
 	}
-	return func(evalCtx *EvalCtx, args []Expr) (Value, error) {
+	return func(evalCtx *EvalCtx, args []Expr, options map[string]Value) (Value, error) {
 		if len(args) != n {
 			return nil, errors.Errorf("expecting %d argument(s), but got %d", n, len(args))
 		}
-		return evalFn(evalCtx, args)
+		return evalFn(evalCtx, args, options)
 	}
 }
 

@@ -21,7 +21,7 @@ var jsonOps = gendsl.NewEnv().
 	WithProcedure("kv", gendsl.Procedure{Eval: _kv}).
 	WithProcedure("dict", gendsl.Procedure{Eval: _dict})
 
-func _json(evalCtx *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _json(evalCtx *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	ret := make(map[string]any)
 	for _, arg := range args {
 		v, err := arg.EvalWithEnv(jsonOps) // inject some operators in this context
@@ -44,7 +44,7 @@ func _json(evalCtx *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
 }
 
 // _kv evaluate a key and its value then assemble them to a KV struct
-func _kv(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _kv(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	key, err := args[0].Eval()
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func _kv(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
 }
 
 // _array evaluate any data and assemble them to a array
-func _array(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _array(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	val := make([]any, 0, 1)
 	for _, arg := range args {
 		v, err := arg.Eval()
@@ -77,7 +77,7 @@ func _array(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
 }
 
 // _array evaluate any KV pair and assemble them to a dict(map[string]any)
-func _dict(_ *gendsl.EvalCtx, args []gendsl.Expr) (gendsl.Value, error) {
+func _dict(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	val := make(map[string]any)
 	for _, arg := range args {
 		v, err := arg.Eval()
@@ -112,7 +112,7 @@ func EvalJSON(script string) ([]byte, error) {
 	return jsonResult.(*gendsl.UserData).V.([]byte), nil
 }
 
-// ExampleEvalExpr demonstrates a DSL that defines and output a JSON []byte.
+// ExampleEvalExpr demonstrates a DSL that defines and output a JSON.
 // Inside the (json ...) block you can use (kv {key} {value}) to add an key-value pair in this JSON.
 // The value could be any string, int, float or array by using (array {value}...) or dict by using (dict (kv {key} {value})...)
 func ExampleEvalExpr() {
