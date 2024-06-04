@@ -181,6 +181,21 @@ var _ = Describe("Expr", func() {
 			Expect(EvalExpr(`(RETURN (PLUS 1 2 (PLUS 1 2)))`, testEnv)).Should(BeEquivalentTo(6))
 		})
 
+		It("can check the expr type for arguments", func() {
+			check := func(evalCtx *EvalCtx,
+				args []Expr,
+				options map[string]Value) (Value, error) {
+				Expect(args[0].Type()).Should(BeEquivalentTo(ExprTypeLiteral))
+				Expect(args[1].Type()).Should(BeEquivalentTo(ExprTypeExpr))
+				Expect(args[2].Type()).Should(BeEquivalentTo(ExprTypeIdentifier))
+				return Nil{}, nil
+			}
+			env := testEnv.Clone().WithProcedure("CHECK", Procedure{Eval: check}).
+				WithInt("bar", 10)
+			Expect(extractErr2(EvalExpr, `(CHECK "foo" (RETURN 1) bar)`, env)).
+				Should(BeNil())
+		})
+
 		Describe("argument check", func() {
 			It("can check extract count of argument", func() {
 				var env = NewEnv().

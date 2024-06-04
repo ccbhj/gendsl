@@ -10,17 +10,57 @@ import (
 type (
 	// EvalOpt for some options to control the evaluate behavior
 	EvalOpt struct {
-		Env *Env
+		Env *Env // Environment that is only expose to this expression, but the identifier from outer scope can be still accessed.
 	}
+
 	// Expr wraps the evalution of an ast node, or in another word, an expression,
 	// It allows you control when the evalution can be done, or the env for evalution, so
 	// that you can program your procedure to act like a macro.
-	Expr func(EvalOpt) (Value, error)
+	Expr struct {
+		node    *node32
+		evalCtx *EvalCtx
+		pc      *ParseContext
+	}
+
+	// ExprType are the type of an expression before it got evaluated
+	ExprType int
 
 	// ProcedureFn specify the behavior of an [gendsl.Procedure].
 	// `evalCtx` carry some information that might be used during the evaluation, see [gendsl.EvalCtx]
 	ProcedureFn func(evalCtx *EvalCtx, args []Expr, options map[string]Value) (Value, error)
 )
+
+const (
+	ExprTypeExpr ExprType = 1 << iota
+	ExprTypeIdentifier
+	ExprTypeLiteral
+)
+
+func (e ExprType) String() string {
+	switch e {
+	case ExprTypeExpr:
+		return "ExprExpression"
+	case ExprTypeIdentifier:
+		return "ExprIdentifier"
+	case ExprTypeLiteral:
+		return "ExprLiteral"
+	}
+
+	return "ExprUnknown"
+}
+
+func getExprType(valueNode *node32) ExprType {
+	switch valueNode.pegRule {
+	case ruleExpression:
+		return ExprTypeExpr
+	case ruleIdentifier:
+		return ExprTypeIdentifier
+	case ruleLiteral:
+		return ExprTypeLiteral
+	}
+
+	panic("unsupported value type: " + valueNode.pegRule.String())
+}
 
 func parseExpression(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
 	cur := node.up
@@ -55,31 +95,13 @@ func parseExpression(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, erro
 			continue
 		case ruleValue:
 			node := cur.up
-			operands = append(operands, newOperand(c, evalCtx, node))
+			operands = append(operands, newExpr(c, evalCtx, node))
 		default:
 			// will NOT go here, parser will make sure of it
 			panic("invalid node in an expression")
 		}
 	}
 	return op.Eval(evalCtx, operands, options)
-}
-
-func newOperand(c *ParseContext, evalCtx *EvalCtx, node *node32) Expr {
-	return func(opt EvalOpt) (Value, error) {
-		env := opt.Env
-		if env != nil {
-			evalCtx = NewEvalCtx(evalCtx, evalCtx.UserData, env)
-		}
-		v, err := c.parseNode(node, evalCtx)
-		if err != nil {
-			return nil, err
-		}
-		tv, ok := v.(Value)
-		if !ok {
-			return nil, evalErrorf(c, node, "expression should return a Value, but got %v", v)
-		}
-		return tv, nil
-	}
 }
 
 func parseOptionList(c *ParseContext, evalCtx *EvalCtx, node *node32) (map[string]Value, error) {
@@ -115,13 +137,32 @@ func parseOption(c *ParseContext, evalCtx *EvalCtx, node *node32) (string, Value
 	return id, v, nil
 }
 
+func newExpr(c *ParseContext, evalCtx *EvalCtx, node *node32) Expr {
+	return Expr{
+		node:    node,
+		evalCtx: evalCtx,
+		pc:      c,
+	}
+}
+
+// Text returns the raw text of the expression.
+func (e Expr) Text() string {
+	return e.pc.nodeText(e.node)
+}
+
+// Type returns the raw type of an expression,
+// which can only be an expression[(X Y Z)], an identifier or a literal.
+func (e Expr) Type() ExprType {
+	return getExprType(e.node)
+}
+
 // Eval evaluate an [gendsl.Expr], return the result of this expression.
 //
 // These errors might be returned:
 //   - [gendsl.SyntaxError] - when a syntax error is found in this expression
 //   - [gendsl.UnboundedIdentifierError] - when an undefined id is used in this expression.
 func (e Expr) Eval() (Value, error) {
-	return e(EvalOpt{})
+	return e.EvalWithOptions(EvalOpt{})
 }
 
 // EvalWithEnv evaluate an [gendsl.Expr] with a new env, return the result of this expression.
@@ -131,7 +172,35 @@ func (e Expr) Eval() (Value, error) {
 //   - [gendsl.SyntaxError] - when a syntax error is found in this expression
 //   - [gendsl.UnboundedIdentifierError] - when an undefined id is used in this expression.
 func (e Expr) EvalWithEnv(env *Env) (Value, error) {
-	return e(EvalOpt{Env: env})
+	return e.EvalWithOptions(EvalOpt{Env: env})
+}
+
+// EvalWithEnv evaluate an [gendsl.Expr] with some options, return the result of this expression.
+// See [gendsl.EvalOpt] for more option description.
+//
+// These errors might be returned:
+//   - [gendsl.SyntaxError] - when a syntax error is found in this expression
+//   - [gendsl.UnboundedIdentifierError] - when an undefined id is used in this expression.
+func (e Expr) EvalWithOptions(opt EvalOpt) (Value, error) {
+	var (
+		evalCtx = e.evalCtx
+		node    = e.node
+		pc      = e.pc
+	)
+
+	env := opt.Env
+	if env != nil {
+		evalCtx = NewEvalCtx(evalCtx, evalCtx.UserData, env)
+	}
+	v, err := pc.parseNode(node, evalCtx)
+	if err != nil {
+		return nil, err
+	}
+	tv, ok := v.(Value)
+	if !ok {
+		return nil, evalErrorf(pc, node, "expression should return a Value, but got %v", v)
+	}
+	return tv, nil
 }
 
 // CheckNArgs check the amount of the operands for a procedure by wrapping an EvalFn.

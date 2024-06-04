@@ -5,15 +5,6 @@ type parser Peg {
 
 Script             <-         Value EOT
 
-# Definition       <-         LPAR DefType OptionList? DefinitionBody RPAR
-# 
-# DefinitionBody   <-         Definition 
-#                              / Definition+
-#                              / Expression+
-#                              / Literal
-#                              / Identifier
-# 
-
 Expression       <-         LPAR Operator OptionList? Value* RPAR 
 
 Operator         <-         Identifier

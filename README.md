@@ -381,20 +381,23 @@ println(val.Unwrap().(string))
 
 ``` golang
 func _let(_ *gendsl.EvalCtx, args []gendsl.Expr, options map[string]gendsl.Value) (gendsl.Value, error) {
-	name, err := args[0].Eval()
-	if err != nil {
-		return nil, err
-	}
-	val, err := args[1].Eval()
-	if err != nil {
-		return nil, err
-	}
+    nameExpr := args[0]
+    if nameExpr.Type() != gendsl.ExprTypeIdentifier {
+        return nil, errors.New("expecting an identifier")
+    }
 
-	return args[2].EvalWithEnv(gendsl.NewEnv().WithValue(string(name.(gendsl.String)), val))
+    name := strings.TrimSpace(nameExpr.Text())
+
+    val, err := args[1].Eval()
+    if err != nil {
+        return nil, err
+    }
+
+    return args[2].EvalWithEnv(ectx.Env().WithValue(name, val))
 }
 
 script := `
-(LET "foo" 10
+(LET foo 10
     (PRINTLN foo)
 )
 `
