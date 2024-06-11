@@ -11,6 +11,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+type Map map[string]Value
+
+func (m Map) Index(path string) (Value, bool) {
+	v, in := m[path]
+	return v, in
+}
+
 func _array(_ *EvalCtx, args []Expr, _ map[string]Value) (Value, error) {
 	ret := make([]Value, 0, len(args))
 	for _, arg := range args {
@@ -310,6 +317,21 @@ var _ = Describe("Expr", func() {
 			Expect(evalFn("(RETURN _foo)", "_foo", Int(10))).To(BeIdenticalTo(Int(10)))
 			Expect(evalFn("(RETURN foo_)", "foo_", Int(10))).To(BeIdenticalTo(Int(10)))
 			Expect(evalFn("(RETURN foo-bar)", "foo-bar", Int(10))).To(BeIdenticalTo(Int(10)))
+		})
+
+		It("can get attributes of an identifier", func() {
+			Expect(evalFn("foo.bar", "foo", &UserData{
+				V: Map{"bar": Int(10)},
+			})).To(BeIdenticalTo(Int(10)))
+
+			Expect(evalFn("foo.bar.$eww", "foo", &UserData{
+				V: Map{"bar": &UserData{V: Map{"$eww": Int(10)}}},
+			})).To(BeIdenticalTo(Int(10)))
+
+			_, err := evalFn("foo.bar.$error", "foo", &UserData{
+				V: Map{"bar": &UserData{V: Map{"$eww": Int(10)}}},
+			})
+			Expect(err).To(MatchError(ContainSubstring("index($error) not found")))
 		})
 
 		It("can refer to a value with its id", func() {

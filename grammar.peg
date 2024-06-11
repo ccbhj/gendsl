@@ -3,7 +3,7 @@ package gendsl
 type parser Peg {
 }
 
-Script             <-         Value EOT
+Script           <-         Value EOT
 
 Expression       <-         LPAR Operator OptionList? Value* RPAR 
 
@@ -11,6 +11,7 @@ Operator         <-         Identifier
 
 Value            <-         (Expression
                              / Literal
+                             / IdentifierAttr
                              / Identifier
                             ) Spacing
 
@@ -27,6 +28,10 @@ Spacing          <-        ( [ \t\r\n]+
                            )*
 
 Identifier       <-       (Letter / '$' / '@') (LetterOrDigit / '-')* Spacing #{}
+
+IdentifierAttr   <-       Identifier AttrPath+
+
+AttrPath         <-       '.' Identifier
 
 #-------------------------------------------------------------------------
 # Literals

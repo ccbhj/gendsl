@@ -26,6 +26,7 @@ func init() {
 		ruleValue:             parseFirstNonSpaceChild,
 		ruleExpression:        parseExpression,
 		ruleIdentifier:        parseIdentifier,
+		ruleIdentifierAttr:    parseIdentifierAttr,
 		ruleOperator:          parseOperator,
 		ruleLiteral:           parseChild,
 		ruleBoolLiteral:       parseBoolLiteral,
@@ -187,12 +188,40 @@ func readIdentifierText(c *ParseContext, node *node32) string {
 }
 
 func parseIdentifier(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
+	return _parseIdentifier(c, evalCtx, node)
+}
+
+func _parseIdentifier(c *ParseContext, evalCtx *EvalCtx, node *node32) (Value, error) {
 	id := readIdentifierText(c, node)
 	v, ok := evalCtx.Lookup(id)
 	if !ok {
 		return nil, newUnboundedIdentifierError(c, node, id)
 	}
 	return v, nil
+}
+
+func parseIdentifierAttr(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, error) {
+	cur := node.up
+	val, err := _parseIdentifier(c, evalCtx, cur)
+	if err != nil {
+		return nil, err
+	}
+
+	cur = cur.next
+	for ; cur != nil; cur = cur.next {
+		idxer, ok := val.Unwrap().(Indexable)
+		if !ok {
+			return nil, evalErrorf(c, cur, "value is not indexable")
+		}
+
+		path := readIdentifierText(c, cur.up) // skip the '.'
+		v, in := idxer.Index(path)
+		if !in {
+			return nil, evalErrorf(c, cur, "index(%s) not found for value(type=%v)", path, v)
+		}
+		val = v
+	}
+	return val, nil
 }
 
 func parseOperator(c *ParseContext, e *EvalCtx, node *node32) (any, error) {

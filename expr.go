@@ -272,7 +272,7 @@ func (e *EvalCtx) Env() *Env {
 }
 
 // Lookup looks up an identifier in the current env, and try to look it up in its outter scope recurssively if not found.
-func (e *EvalCtx) Lookup(id string) (any, bool) {
+func (e *EvalCtx) Lookup(id string) (Value, bool) {
 	if e == nil || e.env == nil {
 		return nil, false
 	}

@@ -1,5 +1,9 @@
 package gendsl
 
+type Indexable interface {
+	Index(idx string) (Value, bool)
+}
+
 // ValueType specify the type of an [Value]
 type ValueType uint64
 
@@ -118,7 +122,7 @@ func (u *UserData) Unwrap() any   { return u.V }
 
 // Procedure define how an expression in the format of (X Y Z...) got evaluated.
 type Procedure struct {
-	Eval    ProcedureFn
+	Eval ProcedureFn
 }
 
 var _ Value = Procedure{}
