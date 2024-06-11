@@ -305,6 +305,22 @@ These expressions are parsed as identifiers:
 > is-string?
 ```
 
+Attribute select is also supported. If an UserData with an object that implements [gendsl.Selector]: 
+```golang
+// Selector can be used for the '.' syntax to get fields b
+type Selector interface {
+	// Select queries attributes by `idx`,
+    // reports whether a field can be found and its value if any
+	Select(idx string) (Value, bool)
+}
+```
+Then you can refer an object's fields by '.': 
+```
+> foo.fields   ; returns foo.Unwrap().Select("fields")
+```
+An error will be thrown if Select() reports false.
+
+
 ## 💡 Examples
 <details><summary>Swith case expression</summary>
 

@@ -13,7 +13,7 @@ import (
 
 type Map map[string]Value
 
-func (m Map) Index(path string) (Value, bool) {
+func (m Map) Select(path string) (Value, bool) {
 	v, in := m[path]
 	return v, in
 }

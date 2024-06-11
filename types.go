@@ -1,7 +1,10 @@
 package gendsl
 
-type Indexable interface {
-	Index(idx string) (Value, bool)
+// Selector can be used for the '.' syntax to get fields b
+type Selector interface {
+	// Select queries attributes by `idx`,
+	// reports whether a field can be found and its value if any
+	Select(idx string) (Value, bool)
 }
 
 // ValueType specify the type of an [Value]

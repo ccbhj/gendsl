@@ -209,13 +209,13 @@ func parseIdentifierAttr(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, 
 
 	cur = cur.next
 	for ; cur != nil; cur = cur.next {
-		idxer, ok := val.Unwrap().(Indexable)
+		idxer, ok := val.Unwrap().(Selector)
 		if !ok {
 			return nil, evalErrorf(c, cur, "value is not indexable")
 		}
 
 		path := readIdentifierText(c, cur.up) // skip the '.'
-		v, in := idxer.Index(path)
+		v, in := idxer.Select(path)
 		if !in {
 			return nil, evalErrorf(c, cur, "index(%s) not found for value(type=%v)", path, v)
 		}
