@@ -78,17 +78,10 @@ func parseExpression(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, erro
 		return nil, evalErrorf(c, node, "procedure <%s> not provide an evaluate function", v)
 	}
 
-	var options map[string]Value
-	cur = cur.next
-	if cur.pegRule == ruleOptionList {
-		options, err = parseOptionList(c, evalCtx, cur)
-		if err != nil {
-			return nil, err
-		}
-		cur = cur.next
-	}
-
+	options := make(map[string]Value)
 	operands := make([]Expr, 0)
+
+	cur = cur.next
 	for ; cur != nil; cur = cur.next {
 		switch cur.pegRule {
 		case ruleLPAR, ruleRPAR:
@@ -96,29 +89,18 @@ func parseExpression(c *ParseContext, evalCtx *EvalCtx, node *node32) (any, erro
 		case ruleValue:
 			node := cur.up
 			operands = append(operands, newExpr(c, evalCtx, node))
+		case ruleOption:
+			id, val, err := parseOption(c, evalCtx, cur)
+			if err != nil {
+				return nil, err
+			}
+			options[id] = val
 		default:
 			// will NOT go here, parser will make sure of it
 			panic("invalid node in an expression")
 		}
 	}
 	return op.Eval(evalCtx, operands, options)
-}
-
-func parseOptionList(c *ParseContext, evalCtx *EvalCtx, node *node32) (map[string]Value, error) {
-	var options map[string]Value
-	cur := node.up
-	for ; cur != nil && cur.pegRule == ruleOption; cur = cur.next {
-		id, val, err := parseOption(c, evalCtx, cur)
-		if err != nil {
-			return nil, err
-		}
-		if options == nil {
-			options = make(map[string]Value)
-		}
-		options[id] = val
-	}
-
-	return options, nil
 }
 
 func parseOption(c *ParseContext, evalCtx *EvalCtx, node *node32) (string, Value, error) {

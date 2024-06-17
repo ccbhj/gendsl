@@ -289,6 +289,7 @@ var _ = Describe("Expr", func() {
 			Expect(EvalExpr(`(PLUS_N #:N 2 10 20)`, env)).Should(BeIdenticalTo(Int(30)))
 			Expect(EvalExpr(`(PLUS_N #:N 2 (RETURN 10) 20)`, env)).Should(BeIdenticalTo(Int(30)))
 			Expect(EvalExpr(`(PLUS_N #:N 2 10 20 30 40 50)`, env)).Should(BeIdenticalTo(Int(30)))
+			Expect(EvalExpr(`(PLUS_N 10 20 #:N 2 30 40 50)`, env)).Should(BeIdenticalTo(Int(30)))
 		})
 
 		It("cannot use an procedure expression in option", func() {

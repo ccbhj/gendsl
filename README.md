@@ -320,6 +320,16 @@ Then you can refer an object's fields by '.':
 ```
 An error will be thrown if Select() reports false.
 
+### Options 
+Option is a key-value pair inside an expression.
+```
+Option = "#:" Identifier Value
+```
+Option can be placed before, after or between produce arguments:
+```
+> (PRINTLN #:out "stderr" "foobar")
+> (PLUS "hello" "world" #:type "string")
+```
 
 ## 💡 Examples
 <details><summary>Swith case expression</summary>

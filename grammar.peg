@@ -5,9 +5,11 @@ type parser Peg {
 
 Script           <-         Value EOT
 
-Expression       <-         LPAR Operator OptionList? Value* RPAR 
+Expression       <-         LPAR Operator (Option / Value)* RPAR 
 
-Operator         <-         Identifier
+Operator         <-         Identifier Spacing?
+
+Option           <-         '#:' Identifier (Literal/Identifier) Spacing
 
 Value            <-         (Expression
                              / Literal
@@ -15,9 +17,6 @@ Value            <-         (Expression
                              / Identifier
                             ) Spacing
 
-OptionList       <-         Option+
-
-Option           <-         '#:' Identifier (Literal/Identifier) Spacing
 
 
 #-------------------------------------------------------------------------
