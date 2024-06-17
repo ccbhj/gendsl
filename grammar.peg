@@ -27,7 +27,11 @@ Spacing          <-        ( [ \t\r\n]+
                              / ';' (![\r\n] .)* [\r\n]
                            )*
 
-Identifier       <-       (Letter / '$' / '@') (LetterOrDigit / '-')* Spacing #{}
+Identifier       <-       !BoolLiteral IdentifierPrefix IdentifierChar* Spacing #{}
+
+IdentifierPrefix <-       Letter / [~!@$%^&*_?|<>]
+
+IdentifierChar   <-       LetterOrDigit / [~!@$%^&*_?|<>] / '-'
 
 IdentifierAttr   <-       Identifier AttrPath+
 
@@ -112,4 +116,3 @@ RPAR      <-  Spacing        ')'         Spacing
 # RBRK      <-  Spacing        ']'         Spacing
 
 EOT       <-  !.
-

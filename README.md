@@ -291,7 +291,7 @@ Noted that injecting a variable called 'nil' makes no sense, and you will get a 
 
 ### Identifiers
 ```
-Identifier = [a-zA-Z@$?_] (LetterOrDigit / '-' / '?')*
+Identifier = [a-zA-Z~!@$%^&*_?|<>] (LetterOrDigit / [~!@$%^&*_?|<>] / '-')*
 ```
 These expressions are parsed as identifiers:
 ```
