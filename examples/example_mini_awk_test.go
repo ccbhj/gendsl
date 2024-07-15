@@ -11,8 +11,8 @@ import (
 )
 
 type MiniAWK struct {
-	Begin    gendsl.Expr
-	End      gendsl.Expr
+	Begin    *gendsl.Expr
+	End      *gendsl.Expr
 	Patterns []struct {
 		Cond gendsl.Expr
 		Then gendsl.Expr
@@ -26,7 +26,7 @@ type MiniAWkOpt func(awk *MiniAWK)
 func _begin(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	return &gendsl.UserData{
 		V: func(awk *MiniAWK) {
-			awk.Begin = args[0]
+			awk.Begin = &args[0]
 		},
 	}, nil
 }
@@ -35,7 +35,7 @@ func _begin(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (g
 func _end(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	return &gendsl.UserData{
 		V: func(awk *MiniAWK) {
-			awk.End = args[0]
+			awk.End = &args[0]
 		},
 	}, nil
 }
