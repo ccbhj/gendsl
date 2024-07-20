@@ -3,6 +3,7 @@ package gendsl_test
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
@@ -17,6 +18,7 @@ type KV struct {
 
 // only in json env would these operators can be accessed
 var jsonOps = gendsl.NewEnv().
+	WithProcedure("if", gendsl.Procedure{Eval: _if}).
 	WithProcedure("array", gendsl.Procedure{Eval: _array}).
 	WithProcedure("kv", gendsl.Procedure{Eval: _kv}).
 	WithProcedure("dict", gendsl.Procedure{Eval: _dict})
@@ -76,7 +78,7 @@ func _array(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (g
 	return &gendsl.UserData{V: val}, nil
 }
 
-// _array evaluate any KV pair and assemble them to a dict(map[string]any)
+// _dict evaluate any KV pair and assemble them to a dict(map[string]any)
 func _dict(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
 	val := make(map[string]any)
 	for _, arg := range args {
@@ -92,6 +94,41 @@ func _dict(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (ge
 	}
 
 	return &gendsl.UserData{V: val}, nil
+}
+
+func _laterThan(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
+	left, err := args[0].Eval()
+	if err != nil {
+		return nil, err
+	}
+	right, err := args[1].Eval()
+	if err != nil {
+		return nil, err
+	}
+
+	return gendsl.Bool(left.Unwrap().(int64) > right.Unwrap().(int64)), nil
+}
+
+func _year() gendsl.Int {
+	return gendsl.Int(time.Now().Year())
+}
+
+// _if check the condition of the first argument,
+// if condition returns not nil, evaluate the second argument, otherwise the third argument
+func _if(_ *gendsl.EvalCtx, args []gendsl.Expr, _ map[string]gendsl.Value) (gendsl.Value, error) {
+	condEnv := gendsl.NewEnv().
+		WithProcedure("later-than", gendsl.Procedure{Eval: gendsl.CheckNArgs("2", _laterThan)}).
+		WithInt("$NOW", _year())
+
+	cond, err := args[0].EvalWithEnv(condEnv)
+	if err != nil {
+		return nil, err
+	}
+	if cond.Type() == gendsl.ValueTypeBool && cond.Unwrap().(bool) == true {
+		return args[1].Eval()
+	}
+
+	return args[2].Eval()
 }
 
 func isTypeOf[T any](v any) bool {
@@ -119,31 +156,23 @@ func ExampleEvalExpr() {
 	RegisterFailHandler(func(message string, callerSkip ...int) {
 		panic(message)
 	})
-
 	script := `
 (json
- (kv "foo" "bar")
- (kv "language" (array "c" "c++" "javascript"))
- (kv "typing" 
-    (dict
+ (if (later-than $NOW 2012)                                  ; condition
+     (kv "language" (array "c" "c++" "javascript" "elixir")) ; then
+     (kv "language" (array "c" "c++" "javascript")))         ; else
+ (kv "typing"
+     (dict
       (kv "c" "static")
       (kv "c++" "static")
-      (kv "javascript" "dynamic")
-    )
-  )
- (kv "first_appear" 
-    (dict
-      (kv "c" 1972)
-      (kv "c++" 1985)
-      (kv "javascript" 1995)
-    )
-  )
-)`
+      (kv "javascript" "dynamic")))
+ )
+`
 
 	jsonResult, err := EvalJSON(script)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(string(jsonResult))
-	// Output: {"first_appear":{"c":1972,"c++":1985,"javascript":1995},"foo":"bar","language":["c","c++","javascript"],"typing":{"c":"static","c++":"static","javascript":"dynamic"}}
+	// Output: {"language":["c","c++","javascript","elixir"],"typing":{"c":"static","c++":"static","javascript":"dynamic"}}
 }
